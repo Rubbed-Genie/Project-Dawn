@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SHADOWCAST</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@300;400;600&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0a;
+    --surface: #111;
+    --border: #222;
+    --accent: #00ff88;
+    --accent-dim: #00ff8833;
+    --text: #e0e0e0;
+    --muted: #555;
+    --mono: 'Share Tech Mono', monospace;
+    --sans: 'Barlow', sans-serif;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    overflow: hidden;
+  }
+
+  /* ── SPLASH SCREEN ── */
+  #splash {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 40px;
+    transition: opacity 0.4s ease, visibility 0.4s;
+  }
+  #splash.hidden { opacity: 0; visibility: hidden; }
+
+  .logo {
+    font-family: var(--mono);
+    font-size: clamp(2rem, 6vw, 4rem);
+    letter-spacing: 0.3em;
+    color: var(--text);
+    position: relative;
+  }
+  .logo span { color: var(--accent); }
+  .logo::after {
+    content: '';
+    display: block;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    margin-top: 12px;
+    animation: scanline 2s ease-in-out infinite;
+  }
+  @keyframes scanline {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+  }
+
+  .device-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 28px 32px;
+    width: min(480px, 90vw);
+  }
+
+  .device-panel h2 {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.2em;
+    color: var(--muted);
+    margin-bottom: 16px;
+    text-transform: uppercase;
+  }
+
+  #device-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+
+  .device-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    padding: 12px 16px;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.15s;
+    position: relative;
+    overflow: hidden;
+  }
+  .device-btn::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--accent);
+    transform: scaleY(0);
+    transition: transform 0.15s;
+  }
+  .device-btn:hover {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+    color: var(--accent);
+  }
+  .device-btn:hover::before { transform: scaleY(1); }
+  .device-btn.recommended { border-color: #00ff8855; }
+  .device-btn.recommended .tag {
+    float: right;
+    font-size: 0.6rem;
+    color: var(--accent);
+    opacity: 0.7;
+    letter-spacing: 0.1em;
+  }
+
+  .status-line {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-top: 16px;
+    min-height: 1em;
+  }
+  .status-line.error { color: #ff4444; }
+  .status-line.ok { color: var(--accent); }
+
+  #refresh-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    padding: 8px 16px;
+    cursor: pointer;
+    margin-top: 12px;
+    transition: all 0.15s;
+  }
+  #refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── VIEWER ── */
+  #viewer {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    display: none;
+    flex-direction: column;
+  }
+  #viewer.active { display: flex; }
+
+  #video-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  /* In fill mode: video-wrap and video expand to cover full viewport incl. toolbar area */
+  #viewer.fill-mode #video-wrap {
+    position: fixed;
+    inset: 0;
+  }
+  #viewer.fill-mode video {
+    object-fit: cover;
+  }
+
+  /* HUD overlay */
+  #hud {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  #viewer:hover #hud { opacity: 1; }
+
+  .hud-corner {
+    position: absolute;
+    width: 20px; height: 20px;
+    border-color: var(--accent);
+    border-style: solid;
+    opacity: 0.5;
+  }
+  .hud-corner.tl { top: 16px; left: 16px; border-width: 2px 0 0 2px; }
+  .hud-corner.tr { top: 16px; right: 16px; border-width: 2px 2px 0 0; }
+  .hud-corner.bl { bottom: 16px; left: 16px; border-width: 0 0 2px 2px; }
+  .hud-corner.br { bottom: 16px; right: 16px; border-width: 0 2px 2px 0; }
+
+  /* Toolbar */
+  #toolbar {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 12px;
+    height: 48px;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    position: relative;
+    z-index: 10;
+  }
+  /* fill mode: toolbar floats above video, hidden by default */
+  #viewer.fill-mode #toolbar {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    opacity: 0;
+    transform: translateY(100%);
+    pointer-events: none;
+  }
+  #viewer.fill-mode #toolbar.peek {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: all;
+  }
+
+  #device-label {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #device-label span { color: var(--accent); margin-right: 8px; }
+
+  .tb-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    padding: 5px 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .tb-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .tb-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+  #res-label {
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    color: var(--muted);
+    padding: 0 8px;
+  }
+
+  /* scrollbar */
+  #device-list::-webkit-scrollbar { width: 4px; }
+  #device-list::-webkit-scrollbar-track { background: transparent; }
+  #device-list::-webkit-scrollbar-thumb { background: var(--border); }
+</style>
+</head>
+<body>
+
+<!-- SPLASH -->
+<div id="splash">
+  <div class="logo">SHADOW<span>CAST</span></div>
+  <div class="device-panel">
+    <h2>Select Video Source</h2>
+    <div id="device-list"><div class="status-line">Requesting camera access…</div></div>
+    <div class="status-line" id="status"></div>
+    <button id="refresh-btn" onclick="loadDevices()">↺ REFRESH</button>
+  </div>
+</div>
+
+<!-- VIEWER -->
+<div id="viewer">
+  <div id="video-wrap">
+    <video id="vid" autoplay playsinline muted></video>
+    <div id="hud">
+      <div class="hud-corner tl"></div>
+      <div class="hud-corner tr"></div>
+      <div class="hud-corner bl"></div>
+      <div class="hud-corner br"></div>
+    </div>
+  </div>
+  <div id="toolbar">
+    <div id="device-label"><span>▶</span><span id="active-name">–</span></div>
+    <div id="res-label" id="res-label">–</div>
+    <button class="tb-btn" id="fill-btn" onclick="toggleFill()">FIT</button>
+    <button class="tb-btn" onclick="goFullscreen()">⛶ FULL</button>
+    <button class="tb-btn" onclick="backToSplash()">⟵ BACK</button>
+  </div>
+</div>
+
+<script>
+  const vid = document.getElementById('vid');
+  const resLabel = document.getElementById('res-label');
+  let currentStream = null;
+  let filled = false;
+
+  // ── DEVICE LOADING ──
+  async function loadDevices() {
+    const list = document.getElementById('device-list');
+    const status = document.getElementById('status');
+    list.innerHTML = '<div class="status-line">Scanning…</div>';
+    status.textContent = '';
+
+    try {
+      // Trigger permission prompt if needed
+      await navigator.mediaDevices.getUserMedia({ video: true }).then(s => s.getTracks().forEach(t => t.stop())).catch(() => {});
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(d => d.kind === 'videoinput');
+
+      if (!videoDevices.length) {
+        list.innerHTML = '<div class="status-line error">No video devices found.</div>';
+        return;
+      }
+
+      list.innerHTML = '';
+      videoDevices.forEach((dev, i) => {
+        const label = dev.label || `Camera ${i + 1}`;
+        const isShadow = /shadowcast|genki|capture|hdmi|usb.*video|game.*cap/i.test(label);
+        const btn = document.createElement('button');
+        btn.className = 'device-btn' + (isShadow ? ' recommended' : '');
+        btn.innerHTML = isShadow
+          ? `${label} <span class="tag">★ RECOMMENDED</span>`
+          : label;
+        btn.onclick = () => startCapture(dev.deviceId, label);
+        list.appendChild(btn);
+      });
+
+      status.textContent = `${videoDevices.length} device(s) found`;
+      status.className = 'status-line ok';
+
+      // Auto-select if only one or obvious match
+      const shadow = videoDevices.find(d => /shadowcast|genki|capture|hdmi|usb.*video|game.*cap/i.test(d.label));
+      if (shadow) {
+        status.textContent += ' — Shadowcast detected, click to connect';
+      }
+    } catch (e) {
+      list.innerHTML = `<div class="status-line error">Permission denied or no devices.<br>${e.message}</div>`;
+    }
+  }
+
+  async function startCapture(deviceId, label) {
+    const status = document.getElementById('status');
+    status.textContent = 'Connecting…';
+    status.className = 'status-line';
+
+    if (currentStream) currentStream.getTracks().forEach(t => t.stop());
+
+    try {
+      const constraints = {
+        video: {
+          deviceId: { exact: deviceId },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          frameRate: { ideal: 60 }
+        },
+        audio: false
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      currentStream = stream;
+      vid.srcObject = stream;
+      vid.muted = true;
+
+      document.getElementById('active-name').textContent = label;
+      document.getElementById('viewer').classList.add('active');
+      document.getElementById('splash').classList.add('hidden');
+
+      vid.onloadedmetadata = () => {
+        resLabel.textContent = `${vid.videoWidth}×${vid.videoHeight}`;
+      };
+
+    } catch (e) {
+      status.textContent = `Error: ${e.message}`;
+      status.className = 'status-line error';
+    }
+  }
+
+  function backToSplash() {
+    if (currentStream) currentStream.getTracks().forEach(t => t.stop());
+    currentStream = null;
+    vid.srcObject = null;
+    document.getElementById('viewer').classList.remove('active');
+    document.getElementById('splash').classList.remove('hidden');
+    loadDevices();
+  }
+
+  function toggleFill() {
+    filled = !filled;
+    const viewer = document.getElementById('viewer');
+    viewer.classList.toggle('fill-mode', filled);
+    // hide toolbar immediately on fill
+    if (filled) document.getElementById('toolbar').classList.remove('peek');
+    document.getElementById('fill-btn').textContent = filled ? 'FIT' : 'FILL';
+    document.getElementById('fill-btn').classList.toggle('active', filled);
+  }
+
+  // Show toolbar when mouse within 60px of bottom edge in fill mode
+  document.addEventListener('mousemove', e => {
+    if (!filled) return;
+    const toolbar = document.getElementById('toolbar');
+    const nearBottom = e.clientY >= window.innerHeight - 60;
+    toolbar.classList.toggle('peek', nearBottom);
+  });
+
+  function goFullscreen() {
+    const wrap = document.getElementById('video-wrap');
+    if (!document.fullscreenElement) {
+      wrap.requestFullscreen().catch(() => vid.requestFullscreen?.());
+    } else {
+      document.exitFullscreen();
+    }
+  }
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    if (e.key === 'f' || e.key === 'F') goFullscreen();
+    if (e.key === 'Escape') { if (!document.fullscreenElement) backToSplash(); }
+    if (e.key === 'z' || e.key === 'Z') toggleFill();
+  });
+
+  loadDevices();
+</script>
+</body>
+</html>
